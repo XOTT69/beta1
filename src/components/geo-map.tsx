@@ -21,7 +21,7 @@ const BOUNDS: [[number, number], [number, number]] = [[44.25, 21.6], [52.5, 40.5
 const MAX_AGE_MS = 50 * 60 * 1000
 
 function normalized(name: string): string {
-  return name.toLocaleLowerCase("uk-UA").replace(/['’]/g, "").replace(/\\s+/g, " ").trim()
+  return name.toLocaleLowerCase("uk-UA").replace(/['’]/g, "").replace(/\s+/g, " ").trim()
 }
 const SLUG_BY_NAME = new Map(OBLASTS.filter(item => item.slug).map(item => [normalized(item.name), item.slug as string]))
 
