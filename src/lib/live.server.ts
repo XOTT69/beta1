@@ -2,6 +2,7 @@ import { OBLASTS } from "@/data/oblasts"
 import type { CityLive, Level, LiveData, OblastLive } from "@/lib/live.types"
 import { tracksFromPosts, type RawPost } from "@/lib/parse-tracks"
 import { MONITOR_SOURCES } from "@/lib/monitor-sources"
+import { fetchAlertsInUa } from "@/lib/alerts-in-ua.server"
 
 const ALERTS_URL = "https://tryvoha.online/api/v1/alerts"
 const REGIONS_URL = "https://tryvoha.online/api/v1/regions"
@@ -117,6 +118,20 @@ async function loadFresh(): Promise<LiveData> {
     warnings.push("Не вдалося оновити статуси тривог")
   }
 
+  const token = process.env.ALERTS_IN_UA_TOKEN?.trim()
+  if (token) {
+    try {
+      const freshAlerts = await fetchAlertsInUa(token)
+      alerts.length = 0
+      alerts.push(...freshAlerts)
+      alertsUpdatedAt = new Date().toISOString()
+      const failed = warnings.indexOf("Не вдалося оновити статуси тривог")
+      if (failed !== -1) warnings.splice(failed, 1)
+    } catch {
+      warnings.push("alerts.in.ua недоступний: використано резервний API")
+    }
+  }
+
   const totals = totalsResult.status === "fulfilled" ? totalsResult.value : new Map<string, number>()
   if (totalsResult.status === "rejected") warnings.push("Не вдалося уточнити межі районів")
 
@@ -210,7 +225,7 @@ async function loadFresh(): Promise<LiveData> {
 }
 
 export async function loadLive(): Promise<LiveData> {
-  if (cache && Date.now() - cache.at < 20_000) return cache.data
+  if (cache && Date.now() - cache.at < (process.env.ALERTS_IN_UA_TOKEN ? 60_000 : 20_000)) return cache.data
   if (!inflight) {
     inflight = loadFresh()
       .then((data) => {
