@@ -549,7 +549,7 @@ function FeedPane({ tracks, now, warnings }: { tracks: Track[]; now: number; war
         )}
       </ul>
       <p className="mt-4 text-xs leading-relaxed text-muted">
-        Тривоги: tryvoha.online за офіційною системою оповіщення. Шахеди на мапі — не координати радара, а текст з @kpszsu, @monitor1654 і @kharkivlife.
+        Тривоги: alerts.in.ua (за наявності серверного токена), резервне джерело — tryvoha.online. Орієнтири БпЛА — з публічних Telegram-дописів, не координати радара. Повідомлення можуть бути неповними або застарілими.
       </p>
     </section>
   )
