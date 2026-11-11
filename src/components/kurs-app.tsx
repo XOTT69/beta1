@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { Bell, BellOff, Map as MapIcon, Radio, Siren } from "lucide-react"
+import { Bell, BellOff, Map as MapIcon, Radio, Siren, Plus, Minus, Maximize2 } from "lucide-react"
 import { OBLASTS, project } from "@/data/oblasts"
 import type { Level, LiveData, OblastLive, Track } from "@/lib/live.types"
 import { getLive } from "@/lib/live"
@@ -304,7 +304,44 @@ function MapPane({
   const bySlug = new Map(oblasts.map((row) => [row.slug, row]))
   const kyiv = cities.find((city) => city.slug === "kyiv")
   const kyivPoint = project(KYIV.lon, KYIV.lat)
-
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const svgRef = useRef<SVGSVGElement>(null)
+  const pointers = useRef(new Map<number, { x: number; y: number }>())
+  const lastDistance = useRef<number | null>(null)
+  const viewWidth = 1000 / zoom
+  const viewHeight = 680 / zoom
+  const viewX = Math.max(0, Math.min(1000 - viewWidth, (1000 - viewWidth) / 2 + pan.x))
+  const viewY = Math.max(0, Math.min(680 - viewHeight, (680 - viewHeight) / 2 + pan.y))
+  function pointerDown(e: React.PointerEvent<SVGSVGElement>) {
+    if (e.pointerType === "mouse" && e.button !== 0) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()]
+      lastDistance.current = Math.hypot(a.x-b.x, a.y-b.y)
+    }
+  }
+  function pointerMove(e: React.PointerEvent<SVGSVGElement>) {
+    const prev = pointers.current.get(e.pointerId)
+    if (!prev) return
+    pointers.current.set(e.pointerId, {x:e.clientX,y:e.clientY})
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!rect) return
+    if (pointers.current.size === 2) {
+      const [a,b] = [...pointers.current.values()]
+      const d = Math.hypot(a.x-b.x,a.y-b.y)
+      if(lastDistance.current) setZoom(z => Math.max(1,Math.min(5,z*d/lastDistance.current!)))
+      lastDistance.current=d
+    } else {
+      const factor = Math.min(rect.width / 1000, rect.height / 680)
+      setPan(p => ({x:p.x-(e.clientX-prev.x)/(factor*zoom),y:p.y-(e.clientY-prev.y)/(factor*zoom)}))
+    }
+  }
+  function pointerUp(e: React.PointerEvent<SVGSVGElement>) {
+    pointers.current.delete(e.pointerId)
+    lastDistance.current=null
+  }
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       <div className="px-4 pt-3">
@@ -325,7 +362,7 @@ function MapPane({
       </div>
 
       <div className="relative min-h-0 flex-1 px-2 pt-2">
-        <svg viewBox="0 0 1000 680" className="h-full w-full" role="img" aria-label="Мапа тривог України">
+        <svg ref={svgRef} viewBox={[viewX,viewY,viewWidth,viewHeight].join(" ")} className="h-full w-full select-none" style={{touchAction:"none"}} role="img" aria-label="Інтерактивна мапа тривог України" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} onWheel={e => {e.preventDefault();setZoom(z=>Math.max(1,Math.min(5,z*(e.deltaY<0?1.15:1/1.15))))}}>
           {OBLASTS.map((shape) => {
             const row = shape.slug ? bySlug.get(shape.slug) : undefined
             const level = row?.level ?? "none"
@@ -362,31 +399,15 @@ function MapPane({
           })}
           {arrows.map((track) => {
             if (!track.to) return null
-            const to = project(track.to.lon, track.to.lat)
-            const from = track.from ? project(track.from.lon, track.from.lat) : null
+            const point = project(track.to.lon, track.to.lat)
             const mine = track.toward.includes(home)
+            const scale = Math.max(0.5, 1 / Math.sqrt(zoom))
             return (
-              <g key={track.id}>
-                {from ? (
-                  <line
-                    className="track-line"
-                    x1={from.x}
-                    y1={from.y}
-                    x2={to.x}
-                    y2={to.y}
-                    stroke={mine ? "var(--color-danger)" : "var(--color-warn)"}
-                    strokeWidth={mine ? 4 : 3}
-                    strokeLinecap="round"
-                    markerEnd="url(#kurs-arrow)"
-                  />
-                ) : (
-                  <circle cx={to.x} cy={to.y} r={7} fill="var(--color-warn)" />
-                )}
-                {track.to.name ? (
-                  <text x={to.x + 8} y={to.y - 8} fill="var(--color-fg)" fontSize="15" fontWeight="700">
-                    {track.to.name}
-                  </text>
-                ) : null}
+              <g key={track.id} transform={["translate(",point.x," ",point.y,") scale(",scale,")"].join("")}>
+                <title>{["Умовний орієнтир: ",track.to.name || "напрямок"," · ",track.sourceLabel," · ",clock(track.at),". Не точне місцезнаходження БпЛА"].join("")}</title>
+                <circle r="22" fill="var(--color-bg)" stroke={mine ? "var(--color-danger)" : "var(--color-warn)"} strokeWidth="3"/>
+                <path d="M-5 -12 L-20 -4 L-20 2 L-5 1 L-3 14 L0 18 L3 14 L5 1 L20 2 L20 -4 L5 -12 L3 -17 L-3 -17 Z" fill={mine ? "var(--color-danger)" : "var(--color-warn)"} stroke="var(--color-bg)" strokeWidth="1.5" />
+                {track.to.name ? <text x="26" y="-8" fill="var(--color-fg)" fontSize="16" fontWeight="700" stroke="var(--color-bg)" strokeWidth="3" paintOrder="stroke">{track.to.name}</text> : null}
               </g>
             )
           })}
@@ -398,12 +419,12 @@ function MapPane({
             stroke="var(--color-bg)"
             strokeWidth={2}
           />
-          <defs>
-            <marker id="kurs-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-              <path d="M0,0 L7,3 L0,6 Z" fill="var(--color-warn)" />
-            </marker>
-          </defs>
         </svg>
+        <div className="absolute right-4 top-4 z-10 flex flex-col gap-2">
+          <button type="button" aria-label="Наблизити карту" onClick={() => setZoom(z => Math.min(5,z*1.5))} className="grid size-11 place-items-center rounded-xl border border-line bg-surface text-fg"><Plus className="size-5"/></button>
+          <button type="button" aria-label="Віддалити карту" onClick={() => setZoom(z => Math.max(1,z/1.5))} className="grid size-11 place-items-center rounded-xl border border-line bg-surface text-fg"><Minus className="size-5"/></button>
+          <button type="button" aria-label="Вся Україна" onClick={() => {setZoom(1);setPan({x:0,y:0})}} className="grid size-11 place-items-center rounded-xl border border-line bg-surface text-fg"><Maximize2 className="size-5"/></button>
+        </div>
       </div>
 
       <div className="flex items-center gap-3 px-4 pb-2 text-xs text-muted">
@@ -413,7 +434,7 @@ function MapPane({
         <span className="inline-flex items-center gap-1">
           <i className="inline-block size-2 rounded-full bg-warn" /> БпЛА
         </span>
-        <span>стрілка — курс з каналу</span>
+        <span>БпЛА — умовний орієнтир із допису</span>
       </div>
 
       {detail ? (
