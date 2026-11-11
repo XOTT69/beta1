@@ -421,6 +421,21 @@ function MapPane({
               />
             )
           })}
+          {showDistricts && zoom >= 1.45 && districtShapes.map((district, i) => (
+            <path key={district.name + i} d={district.d} fill="none" stroke="var(--color-fg)" strokeOpacity={0.5} strokeWidth={0.8 / Math.sqrt(zoom)} strokeDasharray="3 2" pointerEvents="none">
+              <title>{district.name} · адміністративна межа, не межа тривоги</title>
+            </path>
+          ))}
+          {showTowns && towns.map((town, i) => {
+            const pt = project(town.lon, town.lat)
+            const scale = Math.max(0.48, 1 / Math.sqrt(zoom))
+            return (
+              <g key={town.id} transform={"translate(" + pt.x + " " + pt.y + ") scale(" + scale + ")"} pointerEvents="none">
+                <circle r={i < 25 ? 3.8 : 2.9} fill="var(--color-fg)" stroke="var(--color-bg)" strokeWidth="1.7"/>
+                <text x="6" y="-6" fill="var(--color-fg)" fontSize={i < 25 ? 12 : 10} fontWeight={i < 25 ? 700 : 500} stroke="var(--color-bg)" strokeWidth="2.6" paintOrder="stroke">{town.name}</text>
+              </g>
+            )
+          })}
           {arrows.map((track) => {
             if (!track.to) return null
             const point = project(track.to.lon, track.to.lat)
