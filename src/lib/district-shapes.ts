@@ -4,7 +4,7 @@ import { project } from "@/data/oblasts"
  * https://github.com/darmat1/ukraine-geo-data
  * Only the currently selected oblast is downloaded, so mobile startup stays light.
  */
-const SLUGS: Record<string, string> = {
+export const DISTRICT_FILES: Record<string, string> = {
   "vinnicka-oblast": "vinnytska_oblast",
   "volinska-oblast": "volynska_oblast",
   dnipropetrovska: "dnipropetrovska_oblast",
@@ -75,7 +75,7 @@ function geometryPath(geometry: Geometry): string {
 }
 
 export function loadDistricts(slug: string): Promise<DistrictShape[]> {
-  const key = SLUGS[slug]
+  const key = DISTRICT_FILES[slug]
   if (!key) return Promise.resolve([])
   if (!cache.has(key)) {
     const promise = fetch("https://cdn.jsdelivr.net/gh/darmat1/ukraine-geo-data@main/geodata/" + key + ".geojson")
