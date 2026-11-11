@@ -1,14 +1,11 @@
 import { OBLASTS } from "@/data/oblasts"
 import type { CityLive, Level, LiveData, OblastLive } from "@/lib/live.types"
 import { tracksFromPosts, type RawPost } from "@/lib/parse-tracks"
+import { MONITOR_SOURCES } from "@/lib/monitor-sources"
 
 const ALERTS_URL = "https://tryvoha.online/api/v1/alerts"
 const REGIONS_URL = "https://tryvoha.online/api/v1/regions"
-const CHANNELS = [
-  { id: "kpszsu", label: "Повітряні Сили" },
-  { id: "monitor1654", label: "Моніторинг" },
-  { id: "kharkivlife", label: "Харків" },
-] as const
+const CHANNELS = MONITOR_SOURCES
 
 const CITY_PARENT: Record<string, { name: string; oblast: string }> = {
   kyiv: { name: "м. Київ", oblast: "kyivska" },
@@ -81,7 +78,7 @@ async function channelPosts(id: string, label: string): Promise<RawPost[]> {
       accept: "text/html",
       "user-agent": "Mozilla/5.0 (compatible; KursAlert/1.0; +https://alerts.in.ua)",
     },
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(6500),
   })
   if (!response.ok) throw new Error(`${id} ${response.status}`)
   const html = await response.text()
@@ -127,7 +124,7 @@ async function loadFresh(): Promise<LiveData> {
   CHANNELS.forEach((channel, index) => {
     const result = channelResults[index]
     if (!result || result.status === "rejected") {
-      warnings.push(`Канал ${channel.label} зараз недоступний`)
+      warnings.push(`Канал @${channel.id} зараз недоступний`)
       return
     }
     if (result.status === "fulfilled") posts.push(...(result.value as RawPost[]))
