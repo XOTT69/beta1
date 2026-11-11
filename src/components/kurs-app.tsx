@@ -322,12 +322,6 @@ function MapPane({
     })
     return () => { active = false }
   }, [districtSlug])
-  const towns = useMemo(() => PLACES.filter(p => p.kind === "city").filter((p, i) => {
-    if (zoom < 1.65 && i > 24) return false
-    const pt = project(p.lon, p.lat)
-    return pt.x >= viewX - 35 && pt.x <= viewX + viewWidth + 35 &&
-      pt.y >= viewY - 25 && pt.y <= viewY + viewHeight + 25
-  }).slice(0, zoom < 1.65 ? 25 : zoom < 2.7 ? 65 : 120), [zoom, viewX, viewY, viewWidth, viewHeight])
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const svgRef = useRef<SVGSVGElement>(null)
@@ -337,6 +331,12 @@ function MapPane({
   const viewHeight = 680 / zoom
   const viewX = Math.max(0, Math.min(1000 - viewWidth, (1000 - viewWidth) / 2 + pan.x))
   const viewY = Math.max(0, Math.min(680 - viewHeight, (680 - viewHeight) / 2 + pan.y))
+  const towns = useMemo(() => PLACES.filter(p => p.kind === "city").filter((p, i) => {
+    if (zoom < 1.65 && i > 24) return false
+    const pt = project(p.lon, p.lat)
+    return pt.x >= viewX - 35 && pt.x <= viewX + viewWidth + 35 &&
+      pt.y >= viewY - 25 && pt.y <= viewY + viewHeight + 25
+  }).slice(0, zoom < 1.65 ? 25 : zoom < 2.7 ? 65 : 120), [zoom, viewX, viewY, viewWidth, viewHeight])
   function pointerDown(e: React.PointerEvent<SVGSVGElement>) {
     if (e.pointerType === "mouse" && e.button !== 0) return
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -459,6 +459,16 @@ function MapPane({
             strokeWidth={2}
           />
         </svg>
+        <div className="absolute left-3 top-3 z-10 flex flex-col items-start gap-2 text-xs">
+          <label className="flex items-center gap-2 rounded-lg border border-line bg-surface/95 px-2 py-2 text-fg">
+            <input type="checkbox" checked={showTowns} onChange={e => setShowTowns(e.target.checked)} />
+            Міста
+          </label>
+          <label className="flex items-center gap-2 rounded-lg border border-line bg-surface/95 px-2 py-2 text-fg">
+            <input type="checkbox" checked={showDistricts} onChange={e => setShowDistricts(e.target.checked)} />
+            Межі районів
+          </label>
+        </div>
         <div className="absolute right-4 top-4 z-10 flex flex-col gap-2">
           <button type="button" aria-label="Наблизити карту" onClick={() => setZoom(z => Math.min(5,z*1.5))} className="grid size-11 place-items-center rounded-xl border border-line bg-surface text-fg"><Plus className="size-5"/></button>
           <button type="button" aria-label="Віддалити карту" onClick={() => setZoom(z => Math.max(1,z/1.5))} className="grid size-11 place-items-center rounded-xl border border-line bg-surface text-fg"><Minus className="size-5"/></button>
@@ -474,6 +484,8 @@ function MapPane({
           <i className="inline-block size-2 rounded-full bg-warn" /> БпЛА
         </span>
         <span>БпЛА — умовний орієнтир із допису</span>
+        {showDistricts && zoom < 1.45 ? <span>Наблизьте для меж районів</span> : null}
+        {showDistricts && districtError ? <span>Межі районів тимчасово недоступні</span> : null}
       </div>
 
       {detail ? (
