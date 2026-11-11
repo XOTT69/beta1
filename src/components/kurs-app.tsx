@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Bell, BellOff, Map as MapIcon, Radio, Siren, Plus, Minus, Maximize2 } from "lucide-react"
 import { OBLASTS, project } from "@/data/oblasts"
+import { PLACES } from "@/lib/places"
+import { loadDistricts, type DistrictShape } from "@/lib/district-shapes"
 import type { Level, LiveData, OblastLive, Track } from "@/lib/live.types"
 import { getLive } from "@/lib/live"
 
@@ -304,6 +306,28 @@ function MapPane({
   const bySlug = new Map(oblasts.map((row) => [row.slug, row]))
   const kyiv = cities.find((city) => city.slug === "kyiv")
   const kyivPoint = project(KYIV.lon, KYIV.lat)
+  const [districtShapes, setDistrictShapes] = useState<DistrictShape[]>([])
+  const [districtError, setDistrictError] = useState(false)
+  const [showTowns, setShowTowns] = useState(true)
+  const [showDistricts, setShowDistricts] = useState(true)
+  const districtSlug = selected ?? home
+  useEffect(() => {
+    let active = true
+    setDistrictShapes([])
+    setDistrictError(false)
+    loadDistricts(districtSlug).then(data => {
+      if (active) setDistrictShapes(data)
+    }).catch(() => {
+      if (active) setDistrictError(true)
+    })
+    return () => { active = false }
+  }, [districtSlug])
+  const towns = useMemo(() => PLACES.filter(p => p.kind === "city").filter((p, i) => {
+    if (zoom < 1.65 && i > 24) return false
+    const pt = project(p.lon, p.lat)
+    return pt.x >= viewX - 35 && pt.x <= viewX + viewWidth + 35 &&
+      pt.y >= viewY - 25 && pt.y <= viewY + viewHeight + 25
+  }).slice(0, zoom < 1.65 ? 25 : zoom < 2.7 ? 65 : 120), [zoom, viewX, viewY, viewWidth, viewHeight])
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const svgRef = useRef<SVGSVGElement>(null)
