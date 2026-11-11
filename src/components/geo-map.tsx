@@ -3,7 +3,7 @@ import { Layers3, LocateFixed, MapPinned, Minus, Plus } from "lucide-react"
 import { OBLASTS } from "@/data/oblasts"
 import { PLACES } from "@/lib/places"
 import { DISTRICT_FILES } from "@/lib/district-shapes"
-import type { LiveData, OblastLive, Track } from "@/lib/live.types"
+import type { OblastLive, Track } from "@/lib/live.types"
 
 type MapProps = {
   oblasts: OblastLive[]
@@ -12,7 +12,6 @@ type MapProps = {
   onSelect: (slug: string) => void
   now: number
 }
-type LObject = Record<string, any>
 type MapInstance = any
 
 const MAP_SOURCE = "https://cdn.jsdelivr.net/gh/darmat1/ukraine-geo-data@main/geodata/Ukraine.geojson"
@@ -109,6 +108,7 @@ export function GeoMap({ oblasts, tracks, selected, onSelect, now }: MapProps) {
   const [showAircraft, setShowAircraft] = useState(true)
   const [districtError, setDistrictError] = useState(false)
   const bySlug = new Map(oblasts.map(row => [row.slug, row]))
+  const minuteBucket = Math.floor(now / 60000)
   onSelectLatest.current = onSelect
 
   useEffect(() => {
@@ -197,7 +197,7 @@ export function GeoMap({ oblasts, tracks, selected, onSelect, now }: MapProps) {
         interactive: false,
       }).addTo(markers)
     }
-  }, [ready, oblasts, selected, now])
+  }, [ready, oblasts, selected, minuteBucket])
 
   useEffect(() => {
     const L = leaflet.current, instance = map.current
@@ -235,7 +235,7 @@ export function GeoMap({ oblasts, tracks, selected, onSelect, now }: MapProps) {
       marker.bindPopup(popup, { maxWidth: 290 })
       if (unique.size >= 35) break
     }
-  }, [ready, tracks, selected, now, showAircraft])
+  }, [ready, tracks, selected, minuteBucket, showAircraft])
 
   useEffect(() => {
     const L = leaflet.current, instance = map.current
