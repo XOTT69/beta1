@@ -1,0 +1,524 @@
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { Bell, BellOff, Map as MapIcon, Radio, Siren } from "lucide-react"
+import { OBLASTS, project } from "@/data/oblasts"
+import type { Level, LiveData, OblastLive, Track } from "@/lib/live.types"
+import { getLive } from "@/lib/live"
+
+const MAP_MS = 50 * 60 * 1000
+const KYIV = { lon: 30.524, lat: 50.45 }
+
+type Tab = "map" | "feed" | "regions"
+
+function worse(a: Level, b: Level): Level {
+  const rank = { none: 0, yellow: 1, red: 2 }
+  return rank[a] >= rank[b] ? a : b
+}
+
+function clock(iso: string): string {
+  return new Intl.DateTimeFormat("uk-UA", {
+    timeZone: "Europe/Kyiv",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(iso))
+}
+
+function ago(iso: string, now: number): string {
+  const min = Math.max(0, Math.round((now - Date.parse(iso)) / 60000))
+  if (min < 1) return "щойно"
+  if (min < 60) return `${min} хв`
+  const hours = Math.floor(min / 60)
+  const rest = min % 60
+  return rest ? `${hours} год ${rest} хв` : `${hours} год`
+}
+
+function fresh(track: Track, now: number): boolean {
+  return now - Date.parse(track.at) < MAP_MS
+}
+
+function beep() {
+  const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!Ctx) return
+  const ctx = new Ctx()
+  const tone = (freq: number, at: number) => {
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.frequency.value = freq
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime + at)
+    gain.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + at + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + at + 0.28)
+    osc.start(ctx.currentTime + at)
+    osc.stop(ctx.currentTime + at + 0.3)
+  }
+  void ctx.resume().then(() => {
+    tone(784, 0)
+    tone(523, 0.16)
+  })
+}
+
+export function KursApp({ initial }: { initial: LiveData }) {
+  const [data, setData] = useState(initial)
+  const [tab, setTab] = useState<Tab>("map")
+  const [home, setHome] = useState("kyivska")
+  const [sound, setSound] = useState(false)
+  const [ready, setReady] = useState(false)
+  const [selected, setSelected] = useState<string | null>("kyivska")
+  const [now, setNow] = useState(() => Date.parse(initial.fetchedAt))
+  const [offline, setOffline] = useState(false)
+  const seen = useRef<string[] | null>(null)
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("kurs-prefs")
+      if (raw) {
+        const parsed = JSON.parse(raw) as { home?: string; sound?: boolean }
+        if (parsed.home) {
+          setHome(parsed.home)
+          setSelected(parsed.home === "kyiv" ? "kyivska" : parsed.home)
+        }
+        if (parsed.sound) setSound(true)
+      }
+    } catch {
+      /* ignore broken prefs */
+    }
+    setReady(true)
+  }, [])
+
+  useEffect(() => {
+    if (!ready) return
+    localStorage.setItem("kurs-prefs", JSON.stringify({ home, sound }))
+  }, [home, sound, ready])
+
+  useEffect(() => {
+    const tick = window.setInterval(() => setNow(Date.now()), 1000)
+    const pull = window.setInterval(() => {
+      getLive()
+        .then((next) => {
+          setData(next)
+          setOffline(false)
+        })
+        .catch(() => setOffline(true))
+    }, 30000)
+    return () => {
+      window.clearInterval(tick)
+      window.clearInterval(pull)
+    }
+  }, [])
+
+  const oblastBySlug = useMemo(() => new Map(data.oblasts.map((row) => [row.slug, row])), [data.oblasts])
+
+  const focus = useMemo(() => {
+    if (home === "kyiv") {
+      const city = data.cities.find((item) => item.slug === "kyiv")
+      const oblast = oblastBySlug.get("kyivska")
+      return {
+        name: "Київ і Київщина",
+        level: worse(city?.level ?? "none", oblast?.level ?? "none"),
+        startedAt: [city?.startedAt, oblast?.startedAt].filter(Boolean).sort()[0] ?? null,
+        partial: oblast?.partial ?? true,
+        districts: oblast?.districts ?? [],
+      }
+    }
+    const oblast = oblastBySlug.get(home)
+    return {
+      name: oblast?.name ?? "Регіон",
+      level: oblast?.level ?? "none",
+      startedAt: oblast?.startedAt ?? null,
+      partial: oblast?.partial ?? false,
+      districts: oblast?.districts ?? [],
+    }
+  }, [data.cities, home, oblastBySlug])
+
+  const arrows = useMemo(() => {
+    const kept: Track[] = []
+    const keys = new Set<string>()
+    for (const track of data.tracks) {
+      if (track.kind !== "uav" || !fresh(track, now)) continue
+      if (!track.to) continue
+      const key = `${track.to.name}|${track.from?.name ?? ""}|${track.to.lon.toFixed(1)}`
+      if (keys.has(key)) continue
+      keys.add(key)
+      kept.push(track)
+    }
+    return kept.slice(0, 18)
+  }, [data.tracks, now])
+
+  const incoming = useMemo(
+    () =>
+      arrows.filter((track) =>
+        home === "kyiv" ? track.toward.includes("kyivska") || track.to?.name === "Київ" : track.toward.includes(home),
+      ),
+    [arrows, home],
+  )
+
+  useEffect(() => {
+    const ids = incoming.map((track) => track.id)
+    if (seen.current && sound) {
+      const novel = ids.filter((id) => !seen.current?.includes(id))
+      if (novel.length) {
+        beep()
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+          const title = focus.level === "none" ? "Курс у ваш бік" : "Повітряна тривога"
+          new Notification(title, { body: incoming[0]?.text ?? focus.name })
+        }
+      }
+    }
+    seen.current = ids
+  }, [incoming, sound, focus.level, focus.name])
+
+  const selectedOblast = selected ? oblastBySlug.get(selected) : undefined
+  const activeCount = data.oblasts.filter((row) => row.level !== "none").length
+  const updatedSec = Math.max(0, Math.round((now - Date.parse(data.fetchedAt)) / 1000))
+
+  return (
+    <main className="mx-auto flex h-dvh max-w-lg flex-col bg-bg text-fg">
+      <header className="safe-top flex items-center gap-3 border-b border-line px-4 py-3">
+        <span className="grid size-10 place-items-center rounded-full bg-surface text-warn">
+          <Siren className="size-5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-lg font-extrabold leading-none tracking-tight">Курс</p>
+          <p className="mt-1 text-xs text-muted">
+            {offline ? "немає зв'язку, показую останнє" : `оновлено ${updatedSec} с тому`}
+            {activeCount ? ` · тривога в ${activeCount}` : ""}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="grid size-11 place-items-center rounded-full bg-surface text-fg"
+          aria-pressed={sound}
+          aria-label={sound ? "Вимкнути сигнал" : "Увімкнути сигнал"}
+          onClick={() => {
+            setSound((value) => !value)
+            if (!sound && typeof Notification !== "undefined" && Notification.permission === "default") {
+              void Notification.requestPermission()
+            }
+          }}
+        >
+          {sound ? <Bell className="size-5" /> : <BellOff className="size-5 text-muted" />}
+        </button>
+      </header>
+
+      {tab === "map" ? (
+        <MapPane
+          oblasts={data.oblasts}
+          cities={data.cities}
+          arrows={arrows}
+          home={home === "kyiv" ? "kyivska" : home}
+          selected={selected}
+          onSelect={setSelected}
+          focus={focus}
+          incoming={incoming}
+          now={now}
+          detail={selectedOblast}
+          onHome={() => {
+            if (!selected) return
+            setHome(selected)
+          }}
+        />
+      ) : null}
+
+      {tab === "feed" ? <FeedPane tracks={data.tracks} now={now} warnings={data.warnings} /> : null}
+
+      {tab === "regions" ? (
+        <RegionsPane
+          oblasts={data.oblasts}
+          cities={data.cities}
+          home={home}
+          onHome={(slug) => {
+            setHome(slug)
+            setSelected(slug === "kyiv" ? "kyivska" : slug)
+            setTab("map")
+          }}
+        />
+      ) : null}
+
+      <nav className="safe-bottom grid grid-cols-3 border-t border-line bg-surface" aria-label="Розділи">
+        <TabButton current={tab} id="map" label="Мапа" icon={<MapIcon className="size-5" />} onSelect={setTab} />
+        <TabButton current={tab} id="feed" label="Стрічка" icon={<Radio className="size-5" />} onSelect={setTab} />
+        <TabButton current={tab} id="regions" label="Регіон" icon={<Siren className="size-5" />} onSelect={setTab} />
+      </nav>
+    </main>
+  )
+}
+
+function TabButton({
+  current,
+  id,
+  label,
+  icon,
+  onSelect,
+}: {
+  current: Tab
+  id: Tab
+  label: string
+  icon: ReactNode
+  onSelect: (tab: Tab) => void
+}) {
+  const active = current === id
+  return (
+    <button
+      type="button"
+      className={`flex min-h-14 flex-col items-center justify-center gap-1 text-xs font-semibold ${active ? "text-warn" : "text-muted"}`}
+      aria-current={active ? "page" : undefined}
+      onClick={() => onSelect(id)}
+    >
+      {icon}
+      {label}
+    </button>
+  )
+}
+
+function StatusWord({ level }: { level: Level }) {
+  if (level === "red") return <span className="text-danger">Тривога</span>
+  if (level === "yellow") return <span className="text-warn">Загроза БпЛА</span>
+  return <span className="text-safe">Тихо</span>
+}
+
+function MapPane({
+  oblasts,
+  cities,
+  arrows,
+  home,
+  selected,
+  onSelect,
+  focus,
+  incoming,
+  now,
+  detail,
+  onHome,
+}: {
+  oblasts: OblastLive[]
+  cities: LiveData["cities"]
+  arrows: Track[]
+  home: string
+  selected: string | null
+  onSelect: (slug: string) => void
+  focus: { name: string; level: Level; startedAt: string | null; partial: boolean }
+  incoming: Track[]
+  now: number
+  detail?: OblastLive
+  onHome: () => void
+}) {
+  const bySlug = new Map(oblasts.map((row) => [row.slug, row]))
+  const kyiv = cities.find((city) => city.slug === "kyiv")
+  const kyivPoint = project(KYIV.lon, KYIV.lat)
+
+  return (
+    <section className="flex min-h-0 flex-1 flex-col">
+      <div className="px-4 pt-3">
+        <p className="text-sm text-muted">{focus.name}</p>
+        <h1 className="text-4xl font-extrabold tracking-tight">
+          <StatusWord level={focus.level} />
+        </h1>
+        <p className="mt-1 text-sm text-muted">
+          {focus.level === "none"
+            ? "Зараз без тривоги у вибраному регіоні"
+            : `${focus.partial ? "Частково · " : ""}від ${focus.startedAt ? clock(focus.startedAt) : "—"} · ${focus.startedAt ? ago(focus.startedAt, now) : ""}`}
+        </p>
+        {incoming.length ? (
+          <p className="mt-2 text-sm text-warn">
+            За дописами курс у ваш бік: {incoming[0]?.to?.name}. Це приблизно, не радіолокація.
+          </p>
+        ) : null}
+      </div>
+
+      <div className="relative min-h-0 flex-1 px-2 pt-2">
+        <svg viewBox="0 0 1000 680" className="h-full w-full" role="img" aria-label="Мапа тривог України">
+          {OBLASTS.map((shape) => {
+            const row = shape.slug ? bySlug.get(shape.slug) : undefined
+            const level = row?.level ?? "none"
+            const fill = !shape.covered
+              ? "var(--color-bg)"
+              : level === "red"
+                ? "var(--color-danger)"
+                : level === "yellow"
+                  ? "var(--color-warn)"
+                  : "var(--color-surface-2)"
+            const opacity = !shape.covered ? 1 : level === "none" ? 1 : row?.partial ? 0.45 : 0.78
+            const isHome = shape.slug === home
+            const isSelected = shape.slug === selected
+            return (
+              <path
+                key={shape.name}
+                d={shape.d}
+                fill={fill}
+                fillOpacity={opacity}
+                stroke={isSelected ? "var(--color-fg)" : "var(--color-line)"}
+                strokeWidth={isHome ? 4 : isSelected ? 3 : 1.4}
+                role={shape.slug ? "button" : undefined}
+                tabIndex={shape.slug ? 0 : undefined}
+                aria-label={shape.slug ? `${shape.name}, ${level === "none" ? "без тривоги" : level === "red" ? "тривога" : "загроза БпЛА"}` : undefined}
+                onClick={() => shape.slug && onSelect(shape.slug)}
+                onKeyDown={(event) => {
+                  if (shape.slug && (event.key === "Enter" || event.key === " ")) {
+                    event.preventDefault()
+                    onSelect(shape.slug)
+                  }
+                }}
+              />
+            )
+          })}
+          {arrows.map((track) => {
+            if (!track.to) return null
+            const to = project(track.to.lon, track.to.lat)
+            const from = track.from ? project(track.from.lon, track.from.lat) : null
+            const mine = track.toward.includes(home)
+            return (
+              <g key={track.id}>
+                {from ? (
+                  <line
+                    className="track-line"
+                    x1={from.x}
+                    y1={from.y}
+                    x2={to.x}
+                    y2={to.y}
+                    stroke={mine ? "var(--color-danger)" : "var(--color-warn)"}
+                    strokeWidth={mine ? 4 : 3}
+                    strokeLinecap="round"
+                    markerEnd="url(#kurs-arrow)"
+                  />
+                ) : (
+                  <circle cx={to.x} cy={to.y} r={7} fill="var(--color-warn)" />
+                )}
+                {track.to.name ? (
+                  <text x={to.x + 8} y={to.y - 8} fill="var(--color-fg)" fontSize="15" fontWeight="700">
+                    {track.to.name}
+                  </text>
+                ) : null}
+              </g>
+            )
+          })}
+          <circle
+            cx={kyivPoint.x}
+            cy={kyivPoint.y}
+            r={6}
+            fill={kyiv?.level === "red" ? "var(--color-danger)" : kyiv?.level === "yellow" ? "var(--color-warn)" : "var(--color-fg)"}
+            stroke="var(--color-bg)"
+            strokeWidth={2}
+          />
+          <defs>
+            <marker id="kurs-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L7,3 L0,6 Z" fill="var(--color-warn)" />
+            </marker>
+          </defs>
+        </svg>
+      </div>
+
+      <div className="flex items-center gap-3 px-4 pb-2 text-xs text-muted">
+        <span className="inline-flex items-center gap-1">
+          <i className="inline-block size-2 rounded-full bg-danger" /> ракети / тривога
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <i className="inline-block size-2 rounded-full bg-warn" /> БпЛА
+        </span>
+        <span>стрілка — курс з каналу</span>
+      </div>
+
+      {detail ? (
+        <div className="max-h-40 overflow-y-auto border-t border-line px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="font-semibold">{detail.name}</p>
+            <button type="button" className="min-h-11 rounded-full bg-warn px-4 text-sm font-bold text-bg" onClick={onHome}>
+              Мій регіон
+            </button>
+          </div>
+          {detail.districts.length ? (
+            <ul className="mt-2 space-y-1 text-sm">
+              {detail.districts.slice(0, 8).map((district) => (
+                <li key={district.slug} className="flex justify-between gap-3 text-muted">
+                  <span className={district.level === "red" ? "text-danger" : "text-warn"}>{district.name}</span>
+                  <span>з {clock(district.startedAt)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-sm text-muted">Районів під тривогою немає</p>
+          )}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function FeedPane({ tracks, now, warnings }: { tracks: Track[]; now: number; warnings: string[] }) {
+  const rows = tracks.filter((track) => fresh(track, now) || track.kind === "ballistic").slice(0, 40)
+  return (
+    <section className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      <p className="text-sm text-muted">
+        Публічні дописи каналів. Курси приблизні й запізнюються. Укриття — за сиреною та офіційним застосунком «Повітряна тривога».
+      </p>
+      {warnings.length ? <p className="mt-2 text-sm text-warn">{warnings[0]}</p> : null}
+      <ul className="mt-3 space-y-2">
+        {rows.length ? (
+          rows.map((track) => (
+            <li key={track.id} className="rounded-2xl bg-surface px-3 py-3">
+              <div className="flex items-baseline justify-between gap-3 text-xs text-muted">
+                <span>
+                  {clock(track.at)} · {track.sourceLabel}
+                  {track.kind === "ballistic" ? " · балістика" : track.kind === "fpv" ? " · FPV" : ""}
+                </span>
+                <a className="font-semibold text-warn" href={track.url} target="_blank" rel="noreferrer">
+                  допис
+                </a>
+              </div>
+              <p className="mt-1 text-sm leading-snug">{track.text}</p>
+              {track.to?.name ? (
+                <p className="mt-1 text-xs text-warn">
+                  {track.from?.name ? `${track.from.name} → ` : ""}
+                  {track.to.name}
+                </p>
+              ) : null}
+            </li>
+          ))
+        ) : (
+          <li className="rounded-2xl bg-surface px-3 py-4 text-sm text-muted">Свіжих дописів про курси немає.</li>
+        )}
+      </ul>
+      <p className="mt-4 text-xs leading-relaxed text-muted">
+        Тривоги: tryvoha.online за офіційною системою оповіщення. Шахеди на мапі — не координати радара, а текст з @kpszsu, @monitor1654 і @kharkivlife.
+      </p>
+    </section>
+  )
+}
+
+function RegionsPane({
+  oblasts,
+  cities,
+  home,
+  onHome,
+}: {
+  oblasts: OblastLive[]
+  cities: LiveData["cities"]
+  home: string
+  onHome: (slug: string) => void
+}) {
+  const kyiv = cities.find((city) => city.slug === "kyiv")
+  const rows = [{ slug: "kyiv", name: "м. Київ", level: kyiv?.level ?? "none" }, ...oblasts.map((row) => ({ slug: row.slug, name: row.name, level: row.level }))]
+  return (
+    <section className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      <h1 className="text-xl font-extrabold tracking-tight">Де ви</h1>
+      <p className="mt-1 text-sm text-muted">Сигнал спрацює, якщо увімкнений, коли в стрічці з'явиться курс у цей регіон.</p>
+      <ul className="mt-3 space-y-2">
+        {rows.map((row) => {
+          const active = row.slug === home
+          return (
+            <li key={row.slug}>
+              <button
+                type="button"
+                className={`flex min-h-12 w-full items-center justify-between rounded-2xl px-3 text-left ${active ? "bg-surface-2" : "bg-surface"}`}
+                onClick={() => onHome(row.slug)}
+              >
+                <span className="font-semibold">{row.name}</span>
+                <span className={row.level === "red" ? "text-danger" : row.level === "yellow" ? "text-warn" : "text-muted"}>
+                  {row.level === "red" ? "тривога" : row.level === "yellow" ? "БпЛА" : "тихо"}
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
