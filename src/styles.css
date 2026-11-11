@@ -53,3 +53,51 @@
     stroke-dashoffset: -32;
   }
 }
+
+/* Desktop-first geographic alert map */
+.kurs-map-shell { background: #dce8f4; isolation: isolate; }
+.kurs-leaflet { width: 100%; height: 100%; font-family: "Manrope", system-ui, sans-serif; background: #dce8f4; }
+.kurs-basemap { filter: saturate(.72) contrast(.93) brightness(1.025); }
+.kurs-map-shell .leaflet-container { font-family: inherit; background: #d7e5f2; }
+.kurs-map-shell .leaflet-control-attribution { background: rgba(255,255,255,.85)!important; color: #506274; font-size: 10px; }
+.kurs-map-shell .leaflet-control-attribution a { color: #2f5d8b; }
+.kurs-oblast-icon { background: none; border: 0; pointer-events: none; }
+.kurs-oblast-label { display: flex; align-items: center; flex-direction: column; text-align: center; gap: 3px; font-size: 13px; line-height: 1.2; color: #50687b; text-shadow: 0 1px 0 #fff, 0 -1px 0 #fff, 1px 0 0 #fff, -1px 0 0 #fff; white-space: nowrap; }
+.kurs-oblast-label strong { font-weight: 800; letter-spacing: -.03em; }
+.kurs-oblast-label span { font-weight: 700; font-size: 11px; }
+.kurs-oblast-alert { color: #fff; text-shadow: 0 1px 4px rgba(72,35,30,.8), 0 0 2px #874f50; }
+.kurs-city-marker { background: none; border: 0; width: 135px!important; pointer-events: none; display: flex; align-items: center; }
+.kurs-city-dot { flex: 0 0 auto; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #515f6b; border: 1px solid #fff; margin-right: 3px; }
+.kurs-city-name { font-size: 9px; font-weight: 600; color: #4b5660; line-height: 1; white-space: nowrap; text-shadow: 0 1px 0 #fff, 0 -1px 0 #fff, 1px 0 0 #fff; }
+.kurs-major-city .kurs-city-name { font-size: 11px; font-weight: 750; color: #304457; }
+.kurs-aircraft-icon { background: none; border: 0; }
+.kurs-aircraft { display: grid; width: 35px; height: 35px; place-items: center; border-radius: 11px; background: rgba(255,255,255,.91); border: 1px solid rgba(107,87,175,.36); box-shadow: 0 2px 6px #34425749, 0 0 0 2px #fff8; transform: rotate(-35deg); transition: transform .15s ease, background .15s ease; }
+.kurs-aircraft svg { transform: rotate(35deg); }
+.kurs-aircraft-near { background: #fff2f2; border-color: #f14b60; }
+.kurs-aircraft-icon:hover .kurs-aircraft { transform: rotate(-35deg) scale(1.12); }
+.kurs-map-actions button { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 13px; color: #334451; background: #fff; border: 1px solid #cdd8df; box-shadow: 0 2px 12px #21364b22; }
+.kurs-map-actions button:hover { background: #eef5fb; }
+.kurs-map-layer-actions { max-width: calc(100% - 76px); }
+.kurs-map-layer-actions label, .kurs-map-layer-title { display: flex; align-items: center; gap: 7px; min-height: 35px; background: #fffffff2; border: 1px solid #cbd9e3; border-radius: 11px; padding: 0 10px; color: #405261; font-size: 11px; font-weight: 750; box-shadow: 0 2px 10px #18314d15; cursor: pointer; }
+.kurs-map-layer-actions input { accent-color: #526d8b; width: 14px; height: 14px; }
+.kurs-map-legend { max-width: calc(100% - 24px); background: #fffffff2; border: 1px solid #cfdbe4; box-shadow: 0 2px 14px #1d35431b; color: #485d6e; padding: 10px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; }
+.kurs-map-legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.kurs-map-legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; border: 1px solid #a5adb7; }
+.kurs-legend-red { background: #e97871; }
+.kurs-legend-yellow { background: #ffcb48; }
+.kurs-legend-white { background: #fffdf8; }
+.kurs-map-loading { position: absolute; inset: 0; z-index: 900; background: #dce8f4; display: grid; place-items: center; padding: 24px; text-align: center; color: #334a5b; font-weight: 800; font-size: 15px; }
+.kurs-threat-popup { color: #273849; font-size: 12px; line-height: 1.5; display: grid; gap: 8px; }
+.kurs-threat-popup strong { font-size: 14px; }
+.kurs-threat-popup p { margin: 0; }
+.kurs-threat-popup a { font-weight: 800; color: #6954bc; }
+.kurs-threat-popup small { color: #687784; }
+@media (max-width: 640px) {
+  .kurs-map-layer-title { display: none; }
+  .kurs-map-layer-actions { gap: 4px; }
+  .kurs-map-layer-actions label { min-height: 32px; padding: 0 7px; font-size: 10px; }
+  .kurs-map-legend { bottom: 24px; font-size: 10px; gap: 8px; padding: 7px 9px; }
+  .kurs-map-legend .kurs-legend-note { flex-basis: 100%; }
+  .kurs-oblast-label { font-size: 11px; }
+  .kurs-oblast-label span { font-size: 9px; }
+}
